@@ -50,7 +50,12 @@ applyAction act x =
           Reverse -> Just $ reverseInt x
           Insert y -> Just $ x * (10 ^ (length $show y)) + y
           Replace n m -> replaceInt n m x
-          Sum -> Just $ toInteger $ sum $ map digitToInt $ show x 
+          Sum ->
+            Just $
+            (if x < 0
+               then (*) (-1)
+               else (*) 1 ) $
+            toInteger $ sum $ map digitToInt $ filter isDigit $ show x
           Divide y ->
             if x `rem` y == 0
               then Just $ x `quot` y
@@ -70,10 +75,14 @@ childStates gs
     (\act ->
        case applyAction act (currentValue gs) of
          Just x ->
-          if currentValue gs == x then [] else
-           [ ( act
-             , (gs {remainingMoves = remainingMoves gs - 1, currentValue = x}))
-           ]
+           if currentValue gs == x
+             then []
+             else [ ( act
+                    , (gs
+                       { remainingMoves = remainingMoves gs - 1
+                       , currentValue = x
+                       }))
+                  ]
          Nothing -> [])
 
 solve :: GameState -> Maybe [Action]
