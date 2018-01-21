@@ -54,7 +54,7 @@ applyAction act x =
           Insert y -> Just $ x * (10 ^ (length $show y)) + y
           Replace n m -> replaceInt n m x
           Powers y -> Just $ x ^ y
-          ShiftLeft -> readMaybe $ head (show x) : tail (show x)
+          ShiftLeft -> readMaybe $ tail (show x) ++ [head (show x)]
           ShiftRight -> readMaybe $ last (show x) : init (show x)
           Sum ->
             Just $
