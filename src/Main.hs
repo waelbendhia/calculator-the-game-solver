@@ -103,7 +103,7 @@ applyAction act g =
          replaceValue $
          read $
          show x >>= \c ->
-           if | isDigit c -> show $ 10 - digitToInt c
+           if | isDigit c -> show $ mod (10 - digitToInt c) 10
               | otherwise -> [c]
        Store ->
          case store g of
