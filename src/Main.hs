@@ -126,6 +126,28 @@ childStates gs
          Just x -> [(act, x)]
          Nothing -> [])
 
+data Node =
+  Node (Maybe (Node, Action))
+       GameState
+
+actionChain :: Node -> [Action]
+actionChain (Node parent _) =
+  case parent of
+    Nothing -> []
+    Just (n, a) -> actionChain n ++ [a]
+
+solveBfs :: GameState -> Maybe [Action]
+solveBfs startState = bfs [Node Nothing startState]
+  where
+    bfs [] = Nothing
+    bfs (x:xs) =
+      let (Node _ cur) = x
+          toNode (action,child) = Node (Just (x, action)) child
+          childNodes =            map toNode $            childStates cur
+      in if | goal cur == currentValue cur -> Just $ actionChain x
+            | remainingMoves cur == 0 -> bfs xs
+            | otherwise -> bfs $ xs ++ childNodes
+
 solve :: GameState -> Maybe [Action]
 solve gs
   | goal gs == currentValue gs = Just []
@@ -145,7 +167,7 @@ solve gs
 main :: IO ()
 main = do
   gs <- promptGameState
-  putStrLn $ prettyPrint $ solve $ gs
+  putStrLn $ prettyPrint $ solveBfs $ gs
   main
 
 promptGameState :: IO GameState
