@@ -70,6 +70,7 @@ childStates gs
     (\act ->
        case applyAction act (currentValue gs) of
          Just x ->
+          if currentValue gs == x then [] else
            [ ( act
              , (gs {remainingMoves = remainingMoves gs - 1, currentValue = x}))
            ]
