@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Main where
 
@@ -18,7 +19,10 @@ data Action
   | Sum
   | ShiftLeft
   | ShiftRight
+  | AddToButtons Integer
   | Mirror
+  | Store
+  | Unstore
   | Powers Integer
   | Replace Integer
             Integer
@@ -29,7 +33,23 @@ data GameState = GameState
   , goal :: Integer
   , currentValue :: Integer
   , actions :: [Action]
+  , store :: Maybe Integer
   } deriving (Show)
+
+addToAction :: Integer -> Action -> Action
+addToAction n act =
+  let transform m =
+        if m < 0
+          then m - n
+          else m + n
+  in case act of
+       Add x -> Add $ transform x
+       Multiply x -> Multiply $ transform x
+       Insert x -> Insert $ transform x
+       Divide x -> Divide $ transform x
+       Powers x -> Powers $ transform x
+       Replace x y -> Replace (transform x) (transform y)
+       x -> x
 
 replaceInt :: (Show a4, Show a3, Show a2, Read a1) => a2 -> a3 -> a4 -> Maybe a1
 replaceInt from with val =
@@ -43,54 +63,64 @@ reverseInt n = aux n 0
       let (x', y') = x `quotRem` 10
       in aux x' (10 * y + y')
 
-applyAction :: Action -> Integer -> Maybe Integer
-applyAction act x =
-  let res =
-        case act of
-          Add y -> Just $ x + y
-          Multiply y -> Just $ x * y
-          FlipSign -> Just $ -x
-          RemoveDigit -> Just $ quot x 10
-          Reverse -> Just $ reverseInt x
-          Insert y -> Just $ x * (10 ^ (length $show y)) + y
-          Replace n m -> replaceInt n m x
-          Powers y -> Just $ x ^ y
-          Mirror -> readMaybe $ show x ++ (reverse $ show x)
-          ShiftLeft -> readMaybe $ tail (show x) ++ [head (show x)]
-          ShiftRight -> readMaybe $ last (show x) : init (show x)
-          Sum ->
-            Just $
-            (if x < 0
-               then (*) (-1)
-               else (*) 1) $
-            toInteger $ sum $ map digitToInt $ filter isDigit $ show x
-          Divide y ->
-            if x `rem` y == 0
-              then Just $ x `quot` y
-              else Nothing
-  in case res of
-       Just y ->
-         if y > 999999
-           then Nothing
-           else Just y
-       Nothing -> Nothing
+applyAction :: Action -> GameState -> Maybe GameState
+applyAction act g =
+  let GameState {currentValue = x} = g
+      replaceValue y =
+        if y > 99999
+          then Nothing
+          else Just $
+               g {remainingMoves = remainingMoves g - 1, currentValue = y}
+  in case act of
+       Add y -> replaceValue $ x + y
+       Multiply y -> replaceValue $ x * y
+       FlipSign -> replaceValue $ -x
+       RemoveDigit -> replaceValue $ quot x 10
+       Reverse -> replaceValue $ reverseInt x
+       Insert y -> replaceValue $ x * (10 ^ (length $show y)) + y
+       Replace n m -> (replaceInt n m x) >>= replaceValue
+       Powers y -> replaceValue $ x ^ y
+       Mirror -> (readMaybe $ show x ++ (reverse $ show x)) >>= replaceValue
+       ShiftLeft ->
+         (readMaybe $ tail (show x) ++ [head (show x)]) >>= replaceValue
+       ShiftRight ->
+         (readMaybe $ last (show x) : init (show x)) >>= replaceValue
+       Sum ->
+         replaceValue $
+         (if x < 0
+            then (*) (-1)
+            else (*) 1) $
+         toInteger $ sum $ map digitToInt $ filter isDigit $ show x
+       Divide y ->
+         if x `rem` y == 0
+           then replaceValue $ x `quot` y
+           else Nothing
+       AddToButtons n ->
+         Just $
+         g
+         { remainingMoves = remainingMoves g - 1
+         , actions = map (addToAction n) (actions g)
+         }
+       Store ->
+         case store g of
+           Nothing -> Just $ g {store = Just x}
+           Just s ->
+             if x == s
+               then Nothing
+               else Just $g {store = Just x}
+       Unstore ->
+         case store g of
+           Nothing -> Nothing
+           Just s -> applyAction (Insert s) g
 
 childStates :: GameState -> [(Action, GameState)]
 childStates gs
   | remainingMoves gs == 0 = []
   | otherwise =
-    (actions gs) >>=
+    actions gs >>=
     (\act ->
-       case applyAction act (currentValue gs) of
-         Just x ->
-           if currentValue gs == x
-             then []
-             else [ ( act
-                    , (gs
-                       { remainingMoves = remainingMoves gs - 1
-                       , currentValue = x
-                       }))
-                  ]
+       case applyAction act gs of
+         Just x -> [(act, x)]
          Nothing -> [])
 
 solve :: GameState -> Maybe [Action]
@@ -124,7 +154,12 @@ promptGameState = do
   acts <- promptActions
   return
     GameState
-    {remainingMoves = moves, goal = gl, currentValue = starting, actions = acts}
+    { remainingMoves = moves
+    , goal = gl
+    , currentValue = starting
+    , actions = acts
+    , store = Nothing
+    }
 
 prettyPrint :: Maybe [Action] -> String
 prettyPrint Nothing = "Unsolvable"
@@ -154,7 +189,10 @@ promptActions = do
     else case actionFromString ln of
            Just x -> do
              acts <- promptActions
-             return (x : acts)
+             return $
+               case x of
+                 Store -> [Store, Unstore] ++ acts
+                 _ -> x : acts
            Nothing -> do
              putStrLn "Could not parse actions"
              promptActions
@@ -162,6 +200,7 @@ promptActions = do
 actionFromString :: [Char] -> Maybe Action
 actionFromString str
   | length str == 0 = Nothing
+  | map toLower str == "store" = Just Store
   | map toLower str == "<shift" = Just ShiftLeft
   | map toLower str == "shift>" = Just ShiftRight
   | map toLower str == "reverse" = Just Reverse
@@ -182,4 +221,5 @@ actionFromString str
   | head str == '^' = readMaybe (tail str) >>= Just . Powers
   | head str == '*' = readMaybe (tail str) >>= Just . Multiply
   | head str == '/' = readMaybe (tail str) >>= Just . Divide
+  | (take 3 str) == "[+]" = readMaybe (drop 3 str) >>= Just . AddToButtons
   | otherwise = readMaybe str >>= Just . Insert
