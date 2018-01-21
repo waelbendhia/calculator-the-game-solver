@@ -79,16 +79,14 @@ solve gs
   | remainingMoves gs == 0 = Nothing
   | otherwise =
     foldl
-      (\p c ->
+      (\p (act, state) ->
          case p of
-           Nothing -> c
+           Nothing ->
+             case solve state of
+                  Just x -> Just $ act : x
+                  Nothing -> Nothing
            _ -> p)
       Nothing $
-    map
-      (\(act, state) ->
-         case solve state of
-           Just x -> Just $ act : x
-           Nothing -> Nothing) $
     childStates gs
 
 main :: IO ()
