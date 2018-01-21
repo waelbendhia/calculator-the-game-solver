@@ -18,6 +18,7 @@ data Action
   | Sum
   | ShiftLeft
   | ShiftRight
+  | Mirror
   | Powers Integer
   | Replace Integer
             Integer
@@ -54,6 +55,7 @@ applyAction act x =
           Insert y -> Just $ x * (10 ^ (length $show y)) + y
           Replace n m -> replaceInt n m x
           Powers y -> Just $ x ^ y
+          Mirror -> readMaybe $ show x ++ (reverse $ show x)
           ShiftLeft -> readMaybe $ tail (show x) ++ [head (show x)]
           ShiftRight -> readMaybe $ last (show x) : init (show x)
           Sum ->
@@ -164,6 +166,7 @@ actionFromString str
   | map toLower str == "shift>" = Just ShiftRight
   | map toLower str == "reverse" = Just Reverse
   | map toLower str == "sum" = Just Sum
+  | map toLower str == "mirror" = Just Mirror
   | str == "+/-" = Just FlipSign
   | str == "<<" = Just RemoveDigit
   | isInfixOf "=>" str =
