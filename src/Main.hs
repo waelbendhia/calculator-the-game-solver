@@ -15,6 +15,7 @@ data Action
   | RemoveDigit
   | Divide Integer
   | Reverse
+  | Sum
   | Replace Integer
             Integer
   deriving (Show)
@@ -49,6 +50,7 @@ applyAction act x =
           Reverse -> Just $ reverseInt x
           Insert y -> Just $ x * (10 ^ (length $show y)) + y
           Replace n m -> replaceInt n m x
+          Sum -> Just $ toInteger $ sum $ map digitToInt $ show x 
           Divide y ->
             if x `rem` y == 0
               then Just $ x `quot` y
@@ -83,8 +85,8 @@ solve gs
          case p of
            Nothing ->
              case solve state of
-                  Just x -> Just $ act : x
-                  Nothing -> Nothing
+               Just x -> Just $ act : x
+               Nothing -> Nothing
            _ -> p)
       Nothing $
     childStates gs
@@ -143,6 +145,7 @@ actionFromString :: [Char] -> Maybe Action
 actionFromString str
   | length str == 0 = Nothing
   | map toLower str == "reverse" = Just Reverse
+  | map toLower str == "sum" = Just Sum
   | str == "+/-" = Just FlipSign
   | str == "<<" = Just RemoveDigit
   | isInfixOf "=>" str =
