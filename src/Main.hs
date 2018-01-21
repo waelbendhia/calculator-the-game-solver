@@ -17,6 +17,7 @@ data Action
   | Reverse
   | Sum
   | ShiftLeft
+  | ShiftRight
   | Powers Integer
   | Replace Integer
             Integer
@@ -54,6 +55,7 @@ applyAction act x =
           Replace n m -> replaceInt n m x
           Powers y -> Just $ x ^ y
           ShiftLeft -> readMaybe $ head (show x) : tail (show x)
+          ShiftRight -> readMaybe $ last (show x) : init (show x)
           Sum ->
             Just $
             (if x < 0
@@ -158,7 +160,8 @@ promptActions = do
 actionFromString :: [Char] -> Maybe Action
 actionFromString str
   | length str == 0 = Nothing
-  | map toLower str == "<Shift" = Just ShiftLeft
+  | map toLower str == "<shift" = Just ShiftLeft
+  | map toLower str == "shift>" = Just ShiftRight
   | map toLower str == "reverse" = Just Reverse
   | map toLower str == "sum" = Just Sum
   | str == "+/-" = Just FlipSign
