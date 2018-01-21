@@ -16,6 +16,7 @@ data Action
   | Divide Integer
   | Reverse
   | Sum
+  | ShiftLeft
   | Powers Integer
   | Replace Integer
             Integer
@@ -52,6 +53,7 @@ applyAction act x =
           Insert y -> Just $ x * (10 ^ (length $show y)) + y
           Replace n m -> replaceInt n m x
           Powers y -> Just $ x ^ y
+          ShiftLeft -> readMaybe $ head (show x) : tail (show x)
           Sum ->
             Just $
             (if x < 0
@@ -156,6 +158,7 @@ promptActions = do
 actionFromString :: [Char] -> Maybe Action
 actionFromString str
   | length str == 0 = Nothing
+  | map toLower str == "<Shift" = Just ShiftLeft
   | map toLower str == "reverse" = Just Reverse
   | map toLower str == "sum" = Just Sum
   | str == "+/-" = Just FlipSign
@@ -168,9 +171,9 @@ actionFromString str
                        m' <- m
                        return (Replace n' m')))
           else Nothing)
-  | head str == '^' = readMaybe str >>= Just . Powers
   | head str == '-' = readMaybe str >>= Just . Add
   | head str == '+' = readMaybe (tail str) >>= Just . Add
+  | head str == '^' = readMaybe (tail str) >>= Just . Powers
   | head str == '*' = readMaybe (tail str) >>= Just . Multiply
   | head str == '/' = readMaybe (tail str) >>= Just . Divide
   | otherwise = readMaybe str >>= Just . Insert
