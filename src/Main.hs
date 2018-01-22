@@ -29,13 +29,35 @@ data Action
             String
   deriving (Show)
 
+data Portal =
+  Portal Int
+         Int
+  deriving (Show)
+
 data GameState = GameState
   { remainingMoves :: Integer
   , goal :: Integer
   , currentValue :: Integer
   , actions :: [Action]
   , store :: Maybe Integer
+  , portal :: Maybe Portal
   } deriving (Show)
+
+insertNumAt :: (Show p, Read a, Read p, Num a, Show a) => a -> Int -> p -> p
+insertNumAt num at r
+  | (length $show r) < at = r
+  | otherwise =
+    let overflow = take ((length $ show r) - at) $ show r
+        remainder = drop ((length $ show r) - at) $ show r
+    in read $ (show $ ((read overflow) + num)) ++ remainder
+
+applyPortal :: (Show p, Read p) => Portal -> p -> p
+applyPortal (Portal entry exit) res
+  | (length $ show res) <= entry = res
+  | otherwise =
+    let toInsert = digitToInt $ head $show res
+        out = insertNumAt toInsert exit (read $tail $ show res)
+    in applyPortal (Portal entry exit) out
 
 addToAction :: Integer -> Action -> Action
 addToAction n act =
@@ -70,51 +92,58 @@ applyAction act g =
         if | y > 99999 -> Nothing
            | otherwise ->
              Just $ g {remainingMoves = remainingMoves g - 1, currentValue = y}
-  in case act of
-       Add y -> replaceValue $ x + y
-       Multiply y -> replaceValue $ x * y
-       FlipSign -> replaceValue $ -x
-       RemoveDigit -> replaceValue $ quot x 10
-       Reverse -> replaceValue $ reverseInt x
-       Insert y -> replaceValue $ x * (10 ^ (length $show y)) + y
-       Replace n m -> (replaceInt n m x) >>= replaceValue
-       Powers y -> replaceValue $ x ^ y
-       Mirror -> (readMaybe $ show x ++ (reverse $ show x)) >>= replaceValue
-       ShiftLeft ->
-         (readMaybe $ tail (show x) ++ [head (show x)]) >>= replaceValue
-       ShiftRight ->
-         (readMaybe $ last (show x) : init (show x)) >>= replaceValue
-       Sum ->
-         replaceValue $
-         (*)
-           (if | x < 0 -> -1
-               | otherwise -> 1) $
-         toInteger $ sum $ map digitToInt $ filter isDigit $ show x
-       Divide y ->
-         if | x `rem` y == 0 -> replaceValue $ x `quot` y
-            | otherwise -> Nothing
-       AddToButtons n ->
-         Just $
-         g
-         { remainingMoves = remainingMoves g - 1
-         , actions = map (addToAction n) (actions g)
-         }
-       Inv10 ->
-         replaceValue $
-         read $
-         show x >>= \c ->
-           if | isDigit c -> show $ mod (10 - digitToInt c) 10
-              | otherwise -> [c]
-       Store ->
-         case store g of
-           Nothing -> Just $ g {store = Just x}
-           Just s ->
-             if | x == s -> Nothing
-                | otherwise -> Just $ g {store = Just x}
-       Unstore ->
-         case store g of
-           Nothing -> Nothing
-           Just s -> applyAction (Insert s) g
+      out =
+        case act of
+          Add y -> replaceValue $ x + y
+          Multiply y -> replaceValue $ x * y
+          FlipSign -> replaceValue $ -x
+          RemoveDigit -> replaceValue $ quot x 10
+          Reverse -> replaceValue $ reverseInt x
+          Insert y -> replaceValue $ x * (10 ^ (length $show y)) + y
+          Replace n m -> (replaceInt n m x) >>= replaceValue
+          Powers y -> replaceValue $ x ^ y
+          Mirror -> (readMaybe $ show x ++ (reverse $ show x)) >>= replaceValue
+          ShiftLeft ->
+            (readMaybe $ tail (show x) ++ [head (show x)]) >>= replaceValue
+          ShiftRight ->
+            (readMaybe $ last (show x) : init (show x)) >>= replaceValue
+          Sum ->
+            replaceValue $
+            (*)
+              (if | x < 0 -> -1
+                  | otherwise -> 1) $
+            toInteger $ sum $ map digitToInt $ filter isDigit $ show x
+          Divide y ->
+            if | x `rem` y == 0 -> replaceValue $ x `quot` y
+               | otherwise -> Nothing
+          AddToButtons n ->
+            Just $
+            g
+            { remainingMoves = remainingMoves g - 1
+            , actions = map (addToAction n) (actions g)
+            }
+          Inv10 ->
+            replaceValue $
+            read $
+            show x >>= \c ->
+              if | isDigit c -> show $ mod (10 - digitToInt c) 10
+                 | otherwise -> [c]
+          Store ->
+            case store g of
+              Nothing -> Just $ g {store = Just x}
+              Just s ->
+                if | x == s -> Nothing
+                   | otherwise -> Just $ g {store = Just x}
+          Unstore ->
+            case store g of
+              Nothing -> Nothing
+              Just s -> applyAction (Insert s) g
+  in out >>=
+     (\x ->
+        case portal x of
+          Just prtl ->
+            return $ x {currentValue = applyPortal prtl $ currentValue x}
+          Nothing -> Nothing)
 
 childStates :: GameState -> [(Action, GameState)]
 childStates gs
@@ -142,8 +171,8 @@ solveBfs startState = bfs [Node Nothing startState]
     bfs [] = Nothing
     bfs (x:xs) =
       let (Node _ cur) = x
-          toNode (action,child) = Node (Just (x, action)) child
-          childNodes =            map toNode $            childStates cur
+          toNode (action, child) = Node (Just (x, action)) child
+          childNodes = map toNode $ childStates cur
       in if | goal cur == currentValue cur -> Just $ actionChain x
             | remainingMoves cur == 0 -> bfs xs
             | otherwise -> bfs $ xs ++ childNodes
@@ -177,6 +206,7 @@ promptGameState = do
   gl <- promptInt "Goal: "
   starting <- promptInt "Starting value: "
   acts <- promptActions
+  prtl <- promptPortal
   return
     GameState
     { remainingMoves = moves
@@ -184,6 +214,7 @@ promptGameState = do
     , currentValue = starting
     , actions = acts
     , store = Nothing
+    , portal = prtl
     }
 
 prettyPrint :: Maybe [Action] -> String
@@ -197,14 +228,30 @@ promptLine prompt = do
   ln <- getLine
   return ln
 
+promptPortal :: IO (Maybe Portal)
+promptPortal = do
+  ln <- promptLine "Portal none for no portal or 'entry' 'exit':"
+  (let sep = split " " ln
+   in if | ln == "none" -> return Nothing
+         | length sep == 2 ->
+           let [entry, exit] = map readMaybe sep
+           in return $ do
+                entry' <- entry
+                exit' <- exit
+                return $ Portal entry' exit'
+         | otherwise -> retry promptPortal)
+
+retry :: IO b -> IO b
+retry a = do
+  putStrLn "Could not parse input:"
+  a
+
 promptInt :: String -> IO Integer
 promptInt prompt = do
   ln <- promptLine prompt
   case readMaybe ln of
     Just x -> return x
-    Nothing -> do
-      putStrLn "Could not parse input."
-      promptInt prompt
+    Nothing -> retry $ promptInt prompt
 
 promptActions :: IO [Action]
 promptActions = do
@@ -218,9 +265,7 @@ promptActions = do
              case x of
                Store -> [Store, Unstore] ++ acts
                _ -> x : acts
-         Nothing -> do
-           putStrLn "Could not parse actions"
-           promptActions
+         Nothing -> retry promptActions
 
 actionFromString :: [Char] -> Maybe Action
 actionFromString str
