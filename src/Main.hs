@@ -1,6 +1,3 @@
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE RecordWildCards #-}
-
 module Main where
 
 import Data.Char
@@ -9,22 +6,22 @@ import Data.String.Utils
 import Text.Read
 
 data Action
-  = Add Integer
-  | Multiply Integer
-  | Insert Integer
+  = Add Int
+  | Multiply Int
+  | Insert Int
   | FlipSign
   | RemoveDigit
-  | Divide Integer
+  | Divide Int
   | Reverse
   | Sum
   | ShiftLeft
   | ShiftRight
-  | AddToButtons Integer
+  | AddToButtons Int
   | Mirror
   | Store
   | Unstore
   | Inv10
-  | Powers Integer
+  | Powers Int
   | Replace String
             String
   deriving (Show)
@@ -35,48 +32,46 @@ data Portal =
   deriving (Show)
 
 data GameState = GameState
-  { remainingMoves :: Integer
-  , goal :: Integer
-  , currentValue :: Integer
+  { remainingMoves :: Int
+  , goal :: Int
+  , currentValue :: Int
   , actions :: [Action]
-  , store :: Maybe Integer
+  , store :: Maybe Int
   , portal :: Maybe Portal
   } deriving (Show)
 
-insertNumAt :: (Show p, Read a, Read p, Num a, Show a) => a -> Int -> p -> p
-insertNumAt num at r
-  | (length $show r) < at = r
-  | otherwise =
-    let overflow = take ((length $ show r) - at) $ show r
-        remainder = drop ((length $ show r) - at) $ show r
-    in read $ (show $ ((read overflow) + num)) ++ remainder
-
+transformPortal :: GameState -> GameState
+transformPortal gs =
+  case portal gs of
+    Just p -> gs {currentValue = applyPortal p $ currentValue gs}
+    _ -> gs
 
 applyPortal :: Integral t => Portal -> t -> t
 applyPortal (Portal entry exit) res
   | res <= 10 ^ entry = res
   | otherwise =
-    let toInsert = (truncate $ (toRational res) / 10 ^ entry) `mod` 10
-        remainder =
-          (res `mod` 10 ^ entry) +
-          (truncate $toRational res / 10 ^ (entry + 1)) * 10 ^ entry
-        out = remainder + toInsert * 10 ^ exit
-    in applyPortal (Portal entry exit) out
+    applyPortal (Portal entry exit) $ remainder + toInsert * 10 ^ exit
+  where
+    toInsert = (truncate $ (toRational res) / 10 ^ entry) `mod` 10
+    remainder =
+      (res `mod` 10 ^ entry) +
+      (truncate $toRational res / 10 ^ (entry + 1)) * 10 ^ entry
 
-addToAction :: Integer -> Action -> Action
+addToAction :: Int -> Action -> Action
 addToAction n act =
-  let transform m =
-        if | m < 0 -> m - n
-           | otherwise -> m + n
-  in case act of
-       Add x -> Add $ transform x
-       Multiply x -> Multiply $ transform x
-       Insert x -> Insert $ transform x
-       Divide x -> Divide $ transform x
-       Powers x -> Powers $ transform x
-       Replace x y ->
-         Replace (show $transform $ read x) (show $ transform $read y)
-       x -> x
+  case act of
+    Add x -> Add $ add x
+    Multiply x -> Multiply $ add x
+    Insert x -> Insert $ add x
+    Divide x -> Divide $ add x
+    Powers x -> Powers $ add x
+    Replace x y -> Replace (addStr x) (addStr y)
+    x -> x
+  where
+    addStr = show . add . read
+    add m
+      | m < 0 = m - n
+      | otherwise = m + n
 
 replaceInt :: (Show a2, Read a1) => String -> String -> a2 -> Maybe a1
 replaceInt from with = maybeRead . (replace from with) . show
@@ -89,75 +84,88 @@ reverseInt n = aux n 0
       let (x', y') = x `quotRem` 10
       in aux x' (10 * y + y')
 
+verifyValue :: GameState -> Maybe GameState
+verifyValue gs
+  | currentValue gs > 99999 = Nothing
+  | otherwise = Just gs
+
+replaceValue :: GameState -> Int -> Maybe GameState
+replaceValue gs y =
+  Just gs {currentValue = y, remainingMoves = remainingMoves gs - 1}
+
+sumNumber :: (Show a, Num a, Ord a) => a -> Int
+sumNumber n = (*) sign $ sum $ map digitToInt $ filter isDigit $ show n
+  where
+    sign
+      | n < 0 = -1
+      | otherwise = 1
+
+invertNumbers :: (Show a2, Read a1) => a2 -> a1
+invertNumbers n = read $ show n >>= flipDigit
+  where
+    flipDigit c
+      | isDigit c = show $ (10 - digitToInt c) `mod` 10
+      | otherwise = [c]
+
+mirror :: (Show a2, Read a1) => a2 -> Maybe a1
+mirror x = readMaybe $ show x ++ (reverse $ show x)
+
+shift :: (Show a2, Read a1) => Bool -> a2 -> Maybe a1
+shift left x =
+  readMaybe $
+  if left
+    then tail (show x) ++ [head (show x)]
+    else last (show x) : init (show x)
+
+divide :: Integral a => a -> a -> Maybe a
+divide y x
+  | x `rem` y == 0 = Just $ x `quot` y
+  | otherwise = Nothing
+
 applyAction :: Action -> GameState -> Maybe GameState
 applyAction act g =
   let GameState {currentValue = x} = g
-      replaceValue y =
-        if | y > 99999 -> Nothing
-           | otherwise ->
-             Just $ g {remainingMoves = remainingMoves g - 1, currentValue = y}
       out =
         case act of
-          Add y -> replaceValue $ x + y
-          Multiply y -> replaceValue $ x * y
-          FlipSign -> replaceValue $ -x
-          RemoveDigit -> replaceValue $ quot x 10
-          Reverse -> replaceValue $ reverseInt x
-          Insert y -> replaceValue $ x * (10 ^ (length $show y)) + y
-          Replace n m -> (replaceInt n m x) >>= replaceValue
-          Powers y -> replaceValue $ x ^ y
-          Mirror -> (readMaybe $ show x ++ (reverse $ show x)) >>= replaceValue
-          ShiftLeft ->
-            (readMaybe $ tail (show x) ++ [head (show x)]) >>= replaceValue
-          ShiftRight ->
-            (readMaybe $ last (show x) : init (show x)) >>= replaceValue
-          Sum ->
-            replaceValue $
-            (*)
-              (if | x < 0 -> -1
-                  | otherwise -> 1) $
-            toInteger $ sum $ map digitToInt $ filter isDigit $ show x
-          Divide y ->
-            if | x `rem` y == 0 -> replaceValue $ x `quot` y
-               | otherwise -> Nothing
+          Add y -> replaceValue g $ x + y
+          Multiply y -> replaceValue g $ x * y
+          FlipSign -> replaceValue g $ -x
+          RemoveDigit -> replaceValue g $ quot x 10
+          Reverse -> replaceValue g $ reverseInt x
+          Insert y -> replaceValue g $ x * (10 ^ (length $show y)) + y
+          Powers y -> replaceValue g $ x ^ y
+          Sum -> replaceValue g $ sumNumber x
+          Inv10 -> replaceValue g $ invertNumbers x
+          Replace n m -> (replaceInt n m x) >>= replaceValue g
+          Mirror -> mirror x >>= replaceValue g
+          ShiftLeft -> shift True x >>= replaceValue g
+          ShiftRight -> shift False x >>= replaceValue g
+          Divide y -> divide y x >>= replaceValue g
           AddToButtons n ->
             Just $
             g
             { remainingMoves = remainingMoves g - 1
-            , actions = map (addToAction n) (actions g)
+            , actions = map (addToAction n) $ actions g
             }
-          Inv10 ->
-            replaceValue $
-            read $
-            show x >>= \c ->
-              if | isDigit c -> show $ (10 - digitToInt c) `mod` 10
-                 | otherwise -> [c]
           Store ->
             case store g of
               Nothing -> Just $ g {store = Just x}
               Just s ->
-                if | x == s -> Nothing
-                   | otherwise -> Just $ g {store = Just x}
-          Unstore ->
-            case store g of
-              Nothing -> Nothing
-              Just s -> applyAction (Insert s) g
-  in out >>=
-    (\x ->
-       case portal x of
-         Just prtl ->
-           return $ x {currentValue = applyPortal prtl $ currentValue x}
-         Nothing -> return x)
+                if x /= s
+                  then Just $ g {store = Just x}
+                  else Nothing
+          Unstore -> store g >>= (flip applyAction) g . Insert
+  in out >>= verifyValue >>= Just . transformPortal
 
 childStates :: GameState -> [(Action, GameState)]
 childStates gs
-  | remainingMoves gs == 0 = []
-  | otherwise =
-    actions gs >>=
-    (\act ->
-       case applyAction act gs of
-         Just x -> [(act, x)]
-         Nothing -> [])
+  | remainingMoves gs == 0 || currentValue gs == goal gs = []
+  | otherwise = actions gs >>= actionToState
+  where
+    actionToState act =
+      case applyAction act gs of
+        Just x -> [(act, x)]
+        Nothing -> []
 
 data Node =
   Node (Maybe (Node, Action))
@@ -173,29 +181,14 @@ solveBfs :: GameState -> Maybe [Action]
 solveBfs startState = bfs [Node Nothing startState]
   where
     bfs [] = Nothing
-    bfs (x:xs) =
-      let (Node _ cur) = x
-          toNode (action, child) = Node (Just (x, action)) child
-          childNodes = map toNode $ childStates cur
-      in if | goal cur == currentValue cur -> Just $ actionChain x
-            | remainingMoves cur == 0 -> bfs xs
-            | otherwise -> bfs $ xs ++ childNodes
-
-solve :: GameState -> Maybe [Action]
-solve gs
-  | goal gs == currentValue gs = Just []
-  | remainingMoves gs == 0 = Nothing
-  | otherwise =
-    foldl
-      (\p (act, state) ->
-         case p of
-           Nothing ->
-             case solve state of
-               Just x -> Just $ act : x
-               Nothing -> Nothing
-           _ -> p)
-      Nothing $
-    childStates gs
+    bfs (x:xs)
+      | goal cur == currentValue cur = Just $ actionChain x
+      | remainingMoves cur == 0 = bfs xs
+      | otherwise = bfs $ xs ++ childNodes
+      where
+        (Node _ cur) = x
+        toNode (action, child) = Node (Just (x, action)) child
+        childNodes = map toNode $ childStates cur
 
 main :: IO ()
 main = promptGameState >>= putStrLn . prettyPrint . solveBfs >>= always main
@@ -220,24 +213,27 @@ promptGameState = do
 
 prettyPrint :: Maybe [Action] -> String
 prettyPrint Nothing = "Unsolvable"
-prettyPrint (Just []) = ""
-prettyPrint (Just (x:xs)) = "\t" ++ show x ++ "\n" ++ (prettyPrint $ Just xs)
+prettyPrint (Just l) =
+  "\nSolution: " ++ (concat $ intersperse " -> " $ map show l) ++ "\n"
 
 promptLine :: String -> IO String
 promptLine prompt = putStrLn prompt >>= always getLine
 
 promptPortal :: IO (Maybe Portal)
-promptPortal = do
-  ln <- promptLine "Portal none for no portal or 'entry' 'exit':"
-  (let sep = split " " ln
-   in if | ln == "none" -> return Nothing
-         | length sep == 2 ->
-           let [entry, exit] = map readMaybe sep
-           in return $ do
-                entry' <- entry
-                exit' <- exit
-                return $ Portal entry' exit'
-         | otherwise -> retry promptPortal)
+promptPortal =
+  promptLine "Portal none for no portal or 'entry' 'exit':" >>= checkInput
+  where
+    checkInput ln
+      | ln == "none" = return Nothing
+      | length sep == 2 =
+        return $ do
+          entry' <- entry
+          exit' <- exit
+          return $ Portal entry' exit'
+      | otherwise = retry promptPortal
+      where
+        sep = split " " ln
+        [entry, exit] = map readMaybe sep
 
 always :: p1 -> p2 -> p1
 always a _ = a
@@ -245,7 +241,7 @@ always a _ = a
 retry :: IO b -> IO b
 retry a = putStrLn "Could not parse input:" >>= always a
 
-promptInt :: String -> IO Integer
+promptInt :: String -> IO Int
 promptInt prompt = do
   ln <- promptLine prompt
   case readMaybe ln of
@@ -253,18 +249,19 @@ promptInt prompt = do
     Nothing -> retry $ promptInt prompt
 
 promptActions :: IO [Action]
-promptActions = do
-  ln <- promptLine "Action or done for done"
-  if | ln == "done" -> return []
-     | otherwise ->
-       case actionFromString ln of
-         Just x -> do
-           acts <- promptActions
-           return $
-             case x of
-               Store -> [Store, Unstore] ++ acts
-               _ -> x : acts
-         Nothing -> retry promptActions
+promptActions = promptLine "Action or done for done" >>= verify
+  where
+    verify ln
+      | ln == "done" = return []
+      | otherwise =
+        case actionFromString ln of
+          Just x ->
+            promptActions >>=
+            return .
+            case x of
+              Store -> (++) [Store, Unstore]
+              _ -> (:) x
+          Nothing -> retry promptActions
 
 actionFromString :: [Char] -> Maybe Action
 actionFromString str
@@ -280,12 +277,13 @@ actionFromString str
   | str == "<<" = Just RemoveDigit
   | isInfixOf "=>" str =
     let operands = split "=>" str
-    in if | length operands == 2 ->
-            (let [n, m] = operands
-             in (do _ <- readMaybe n :: Maybe Integer
-                    _ <- readMaybe m :: Maybe Integer
-                    return (Replace n m)))
-          | otherwise -> Nothing
+        [n, m] = operands
+    in if length operands == 2
+         then do
+           _ <- readMaybe n :: Maybe Int
+           _ <- readMaybe m :: Maybe Int
+           return $ Replace n m
+         else Nothing
   | head str == '-' = readMaybe str >>= Just . Add
   | head str == '+' = readMaybe (tail str) >>= Just . Add
   | head str == '^' = readMaybe (tail str) >>= Just . Powers
