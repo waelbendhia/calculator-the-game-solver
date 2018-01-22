@@ -51,12 +51,16 @@ insertNumAt num at r
         remainder = drop ((length $ show r) - at) $ show r
     in read $ (show $ ((read overflow) + num)) ++ remainder
 
-applyPortal :: (Show p, Read p) => Portal -> p -> p
+
+applyPortal :: Integral t => Portal -> t -> t
 applyPortal (Portal entry exit) res
-  | (length $ show res) <= entry = res
+  | res <= 10 ^ entry = res
   | otherwise =
-    let toInsert = digitToInt $ head $show res
-        out = insertNumAt toInsert exit (read $tail $ show res)
+    let toInsert = (truncate $ (toRational res) / 10 ^ entry) `mod` 10
+        remainder =
+          (res `mod` 10 ^ entry) +
+          (truncate $toRational res / 10 ^ (entry + 1)) * 10 ^ entry
+        out = remainder + toInsert * 10 ^ exit
     in applyPortal (Portal entry exit) out
 
 addToAction :: Integer -> Action -> Action
@@ -126,7 +130,7 @@ applyAction act g =
             replaceValue $
             read $
             show x >>= \c ->
-              if | isDigit c -> show $ mod (10 - digitToInt c) 10
+              if | isDigit c -> show $ (10 - digitToInt c) `mod` 10
                  | otherwise -> [c]
           Store ->
             case store g of
@@ -139,11 +143,11 @@ applyAction act g =
               Nothing -> Nothing
               Just s -> applyAction (Insert s) g
   in out >>=
-     (\x ->
-        case portal x of
-          Just prtl ->
-            return $ x {currentValue = applyPortal prtl $ currentValue x}
-          Nothing -> Nothing)
+    (\x ->
+       case portal x of
+         Just prtl ->
+           return $ x {currentValue = applyPortal prtl $ currentValue x}
+         Nothing -> return x)
 
 childStates :: GameState -> [(Action, GameState)]
 childStates gs
@@ -194,10 +198,7 @@ solve gs
     childStates gs
 
 main :: IO ()
-main = do
-  gs <- promptGameState
-  putStrLn $ prettyPrint $ solveBfs $ gs
-  main
+main = promptGameState >>= putStrLn . prettyPrint . solveBfs >>= always main
 
 promptGameState :: IO GameState
 promptGameState = do
@@ -205,8 +206,8 @@ promptGameState = do
   moves <- promptInt "Moves: "
   gl <- promptInt "Goal: "
   starting <- promptInt "Starting value: "
-  acts <- promptActions
   prtl <- promptPortal
+  acts <- promptActions
   return
     GameState
     { remainingMoves = moves
@@ -223,10 +224,7 @@ prettyPrint (Just []) = ""
 prettyPrint (Just (x:xs)) = "\t" ++ show x ++ "\n" ++ (prettyPrint $ Just xs)
 
 promptLine :: String -> IO String
-promptLine prompt = do
-  putStrLn prompt
-  ln <- getLine
-  return ln
+promptLine prompt = putStrLn prompt >>= always getLine
 
 promptPortal :: IO (Maybe Portal)
 promptPortal = do
@@ -241,10 +239,11 @@ promptPortal = do
                 return $ Portal entry' exit'
          | otherwise -> retry promptPortal)
 
+always :: p1 -> p2 -> p1
+always a _ = a
+
 retry :: IO b -> IO b
-retry a = do
-  putStrLn "Could not parse input:"
-  a
+retry a = putStrLn "Could not parse input:" >>= always a
 
 promptInt :: String -> IO Integer
 promptInt prompt = do
