@@ -94,11 +94,11 @@ replaceValue gs y =
   Just gs {currentValue = y, remainingMoves = remainingMoves gs - 1}
 
 sumNumber :: (Show a, Num a, Ord a) => a -> Int
-sumNumber n = (*) sign $ sum $ map digitToInt $ filter isDigit $ show n
+sumNumber n = sign $ sum $ map digitToInt $ filter isDigit $ show n
   where
     sign
-      | n < 0 = -1
-      | otherwise = 1
+      | n < 0 = (* (-1))
+      | otherwise = id
 
 invertNumbers :: (Show a2, Read a1) => a2 -> a1
 invertNumbers n = read $ show n >>= flipDigit
